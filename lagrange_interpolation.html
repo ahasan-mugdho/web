@@ -1,0 +1,602 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Lagrange Interpolation Visualizer</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: system-ui, sans-serif; background: #f5f5f2; color: #1a1a1a; padding: 24px; min-height: 100vh; }
+  h1 { font-size: 20px; font-weight: 500; margin-bottom: 4px; }
+  .subtitle { font-size: 13px; color: #666; margin-bottom: 16px; }
+
+  #canvas-wrap { position: relative; width: 100%; height: 600px; border: 0.5px solid #ddd; border-radius: 12px; overflow: hidden; background: #fff; }
+  #curve-canvas, #overlay { position: absolute; inset: 0; width: 100%; height: 100%; }
+  #overlay { cursor: crosshair; }
+
+  /* zoom controls */
+  .zoom-bar { position: absolute; top: 10px; right: 10px; display: flex; flex-direction: column; gap: 4px; z-index: 10; }
+  .zoom-btn { width: 30px; height: 30px; background: rgba(255,255,255,0.92); border: 0.5px solid #ccc; border-radius: 7px; font-size: 17px; line-height: 1; cursor: pointer; display: flex; align-items: center; justify-content: center; color: #333; }
+  .zoom-btn:hover { background: #f0f0ef; }
+  .zoom-label { font-size: 10px; text-align: center; color: #888; background: rgba(255,255,255,0.88); border: 0.5px solid #ddd; border-radius: 5px; padding: 2px 4px; user-select: none; }
+
+  .section { margin-top: 16px; }
+  .section-label { font-size: 12px; font-weight: 500; color: #888; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 8px; }
+
+  .controls { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
+  button { background: #fff; border: 0.5px solid #ccc; border-radius: 8px; padding: 6px 14px; font-size: 13px; cursor: pointer; color: #1a1a1a; }
+  button:hover { background: #f0f0f0; }
+  button.primary { background: #378add; border-color: #378add; color: #fff; }
+  button.primary:hover { background: #2a6fb5; }
+
+  .add-row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+  .add-row input[type=number] { width: 100px; padding: 6px 10px; border: 0.5px solid #ccc; border-radius: 8px; font-size: 13px; background: #fff; color: #1a1a1a; }
+  .add-row input[type=number]:focus { outline: none; border-color: #378add; }
+  .add-row span { font-size: 13px; color: #888; }
+
+  .pts-list { display: flex; flex-wrap: wrap; gap: 8px; min-height: 28px; }
+  .pt-chip { display: flex; align-items: center; gap: 6px; padding: 4px 10px; background: #f5f5f2; border: 0.5px solid #ddd; border-radius: 99px; font-size: 13px; color: #555; }
+  .pt-chip button { background: none; border: none; cursor: pointer; color: #aaa; padding: 0; font-size: 15px; line-height: 1; }
+  .pt-chip button:hover { color: #e24b4a; }
+
+  .info-bar { display: flex; flex-wrap: wrap; gap: 16px; font-size: 13px; color: #666; }
+  .badge { display: inline-flex; align-items: center; gap: 6px; }
+  .dot { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
+
+  #result-box { display: none; background: #fff; border: 0.5px solid #ddd; border-radius: 10px; padding: 14px 18px; }
+  #result-box .res-label { font-size: 12px; color: #888; margin-bottom: 4px; }
+  #result-box .res-value { font-size: 22px; font-weight: 500; color: #378add; font-family: monospace; }
+  #result-box .res-sub { font-size: 13px; color: #888; margin-top: 4px; }
+  #result-error { font-size: 13px; color: #e24b4a; display: none; margin-top: 6px; }
+
+  #warning { color: #ba7517; font-size: 13px; display: none; }
+  .hint { font-size: 12px; color: #999; margin-top: 4px; }
+  #poly-display { font-size: 13px; color: #555; font-family: monospace; min-height: 18px; word-break: break-word; }
+  .err-msg { font-size: 13px; color: #e24b4a; margin-top: 6px; display: none; }
+  .divider { border: none; border-top: 0.5px solid #e8e8e5; margin: 16px 0; }
+
+  @media (prefers-color-scheme: dark) {
+    body { background: #1a1a1a; color: #e8e8e8; }
+    #canvas-wrap { border-color: #333; background: #1e1e1e; }
+    .zoom-btn { background: rgba(40,40,40,0.92); border-color: #555; color: #ddd; }
+    .zoom-btn:hover { background: #333; }
+    .zoom-label { background: rgba(40,40,40,0.88); border-color: #555; color: #888; }
+    button { background: #2a2a2a; border-color: #444; color: #e8e8e8; }
+    button:hover { background: #333; }
+    button.primary { background: #378add; border-color: #378add; color: #fff; }
+    button.primary:hover { background: #2a6fb5; }
+    .pt-chip { background: #2a2a2a; border-color: #444; color: #aaa; }
+    .pt-chip button { color: #555; }
+    .info-bar { color: #aaa; }
+    #poly-display { color: #aaa; }
+    .subtitle, .section-label, .add-row span { color: #777; }
+    .hint { color: #555; }
+    .add-row input[type=number] { background: #2a2a2a; border-color: #444; color: #e8e8e8; }
+    #result-box { background: #2a2a2a; border-color: #444; }
+    #result-box .res-label, #result-box .res-sub { color: #777; }
+    .divider { border-color: #2e2e2e; }
+  }
+</style>
+</head>
+<body>
+
+<h1>Lagrange Interpolation</h1>
+<p class="subtitle">Add data points manually or click the canvas — scroll or pinch to zoom, drag to pan, then query any x.</p>
+
+<div id="canvas-wrap">
+  <canvas id="curve-canvas"></canvas>
+  <canvas id="overlay"></canvas>
+  <div class="zoom-bar">
+    <button class="zoom-btn" onclick="zoomStep(1.4)" title="Zoom in">+</button>
+    <div class="zoom-label" id="zoom-label">1×</div>
+    <button class="zoom-btn" onclick="zoomStep(1/1.4)" title="Zoom out">−</button>
+    <button class="zoom-btn" onclick="resetView()" title="Reset view" style="font-size:13px;">⌂</button>
+  </div>
+</div>
+
+<div class="section">
+  <div class="controls">
+    <button onclick="clearPoints()">Clear all</button>
+    <button onclick="loadPreset()">Load preset</button>
+  </div>
+</div>
+
+<hr class="divider">
+
+<div class="section">
+  <div class="section-label">Add data point</div>
+  <div class="add-row">
+    <span>x =</span>
+    <input type="number" id="in-x" step="any" placeholder="e.g. 20">
+    <span>y =</span>
+    <input type="number" id="in-y" step="any" placeholder="e.g. 35">
+    <button class="primary" onclick="addManual()">Add point</button>
+  </div>
+  <div id="add-error" class="err-msg"></div>
+</div>
+
+<div class="section">
+  <div class="pts-list" id="pts-list"></div>
+  <p class="hint">Click canvas to add · Drag point to move · Drag empty space to pan · Scroll to zoom</p>
+</div>
+
+<hr class="divider">
+
+<div class="info-bar">
+  <span class="badge"><span class="dot" style="background:#378add"></span>Interpolating curve</span>
+  <span class="badge"><span class="dot" style="background:#d85a30"></span>Data points</span>
+  <span class="badge"><span class="dot" style="background:#9b59b6"></span>Queried point</span>
+  <span class="badge" id="degree-badge" style="display:none"><span class="dot" style="background:#639922"></span><span id="degree-text"></span></span>
+</div>
+<div id="warning" style="margin-top:8px;">⚠ High-degree polynomial — edge oscillations may appear.</div>
+<div id="poly-display" style="margin-top:8px;"></div>
+
+<hr class="divider">
+
+<div class="section">
+  <div class="section-label">Evaluate P(x)</div>
+  <div class="add-row">
+    <span>x =</span>
+    <input type="number" id="query-x" step="any" placeholder="e.g. 15">
+    <button class="primary" onclick="evaluateQuery()">Find P(x)</button>
+    <button onclick="clearQuery()">Clear</button>
+  </div>
+  <div id="result-error"></div>
+  <div id="result-box" style="margin-top:12px;">
+    <div class="res-label">Result</div>
+    <div class="res-value" id="res-value"></div>
+    <div class="res-sub" id="res-sub"></div>
+  </div>
+</div>
+
+<script>
+const wrap = document.getElementById('canvas-wrap');
+const cCanvas = document.getElementById('curve-canvas');
+const oCanvas = document.getElementById('overlay');
+const cc = cCanvas.getContext('2d');
+const oc = oCanvas.getContext('2d');
+const MARGIN = 50;
+
+// ── viewport state ─────────────────────────────────────────────────────────────
+// camera: world coords visible. cx,cy = center of view, scale = pixels per world unit
+let cam = { cx: 0, cy: 0, scale: null }; // scale set on first resize
+
+function defaultScale() {
+  return (cCanvas.width - 2 * MARGIN) / 200; // 200 world units across
+}
+
+function resetView() {
+  cam.cx = 0; cam.cy = 0;
+  cam.scale = defaultScale();
+  draw();
+}
+
+// world → canvas
+function toCanvas(wx, wy) {
+  const w = cCanvas.width, h = cCanvas.height;
+  return [
+    w / 2 + (wx - cam.cx) * cam.scale,
+    h / 2 - (wy - cam.cy) * cam.scale
+  ];
+}
+// canvas → world
+function fromCanvas(cx, cy) {
+  const w = cCanvas.width, h = cCanvas.height;
+  return [
+    cam.cx + (cx - w / 2) / cam.scale,
+    cam.cy - (cy - h / 2) / cam.scale
+  ];
+}
+
+// ── Lagrange ───────────────────────────────────────────────────────────────────
+function lagrange(pts, x) {
+  const n = pts.length;
+  if (n === 0) return NaN;
+  if (n === 1) return pts[0][1];
+  let result = 0;
+  for (let i = 0; i < n; i++) {
+    let term = pts[i][1];
+    for (let j = 0; j < n; j++) {
+      if (i !== j) {
+        const d = pts[i][0] - pts[j][0];
+        if (Math.abs(d) < 1e-10) return NaN;
+        term *= (x - pts[j][0]) / d;
+      }
+    }
+    result += term;
+  }
+  return result;
+}
+
+let points = [];
+let queryPoint = null;
+function sortedPts() { return [...points].sort((a, b) => a[0] - b[0]); }
+function uniqueOk(pts) { return new Set(pts.map(p => p[0].toFixed(6))).size === pts.length; }
+function isDark() { return matchMedia('(prefers-color-scheme: dark)').matches; }
+
+// ── smart grid ─────────────────────────────────────────────────────────────────
+function niceStep(rawStep) {
+  const mag = Math.pow(10, Math.floor(Math.log10(rawStep)));
+  const norm = rawStep / mag;
+  if (norm < 1.5) return mag;
+  if (norm < 3.5) return 2 * mag;
+  if (norm < 7.5) return 5 * mag;
+  return 10 * mag;
+}
+
+function drawGrid() {
+  const w = cCanvas.width, h = cCanvas.height, dark = isDark();
+  const [wxMin] = fromCanvas(MARGIN, 0), [wxMax] = fromCanvas(w - MARGIN, 0);
+  const [, wyMin] = fromCanvas(0, h - MARGIN), [, wyMax] = fromCanvas(0, MARGIN);
+
+  // pick step so we get ~8 lines across
+  const rawStep = (wxMax - wxMin) / 8;
+  const step = niceStep(rawStep);
+  const minorStep = step / 5;
+
+  cc.save();
+
+  // minor lines
+  cc.strokeStyle = dark ? 'rgba(255,255,255,0.04)' : 'rgba(0,0,0,0.04)';
+  cc.lineWidth = 0.5;
+  const mStart = Math.ceil(wxMin / minorStep) * minorStep;
+  for (let v = mStart; v <= wxMax + minorStep; v += minorStep) {
+    const [gx] = toCanvas(v, 0);
+    cc.beginPath(); cc.moveTo(gx, MARGIN); cc.lineTo(gx, h - MARGIN); cc.stroke();
+  }
+  const myStart = Math.ceil(wyMin / minorStep) * minorStep;
+  for (let v = myStart; v <= wyMax + minorStep; v += minorStep) {
+    const [, gy] = toCanvas(0, v);
+    cc.beginPath(); cc.moveTo(MARGIN, gy); cc.lineTo(w - MARGIN, gy); cc.stroke();
+  }
+
+  // major lines + labels
+  cc.strokeStyle = dark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.09)';
+  cc.lineWidth = 0.5;
+  cc.fillStyle = dark ? 'rgba(255,255,255,0.38)' : 'rgba(0,0,0,0.38)';
+  cc.font = '10px system-ui, sans-serif';
+
+  const [ax] = toCanvas(0, 0), [, ay] = toCanvas(0, 0);
+  const axClamp = Math.max(MARGIN + 2, Math.min(w - MARGIN - 2, ax));
+  const ayClamp = Math.max(MARGIN + 2, Math.min(h - MARGIN - 2, ay));
+
+  const xStart = Math.ceil(wxMin / step) * step;
+  for (let v = xStart; v <= wxMax + step; v += step) {
+    const rv = +v.toPrecision(10);
+    const [gx] = toCanvas(rv, 0);
+    cc.beginPath(); cc.moveTo(gx, MARGIN); cc.lineTo(gx, h - MARGIN); cc.stroke();
+    if (Math.abs(rv) > step * 0.01) {
+      cc.textAlign = 'center';
+      cc.fillText(fmtNum(rv), gx, ayClamp + 13);
+    }
+  }
+
+  const yStart = Math.ceil(wyMin / step) * step;
+  for (let v = yStart; v <= wyMax + step; v += step) {
+    const rv = +v.toPrecision(10);
+    const [, gy] = toCanvas(0, rv);
+    cc.beginPath(); cc.moveTo(MARGIN, gy); cc.lineTo(w - MARGIN, gy); cc.stroke();
+    if (Math.abs(rv) > step * 0.01) {
+      cc.textAlign = 'right';
+      cc.fillText(fmtNum(rv), axClamp - 4, gy + 3);
+    }
+  }
+
+  // axes
+  cc.strokeStyle = dark ? 'rgba(255,255,255,0.28)' : 'rgba(0,0,0,0.28)';
+  cc.lineWidth = 1.2;
+  cc.beginPath(); cc.moveTo(ax, MARGIN); cc.lineTo(ax, h - MARGIN); cc.stroke();
+  cc.beginPath(); cc.moveTo(MARGIN, ay); cc.lineTo(w - MARGIN, ay); cc.stroke();
+
+  cc.restore();
+}
+
+function fmtNum(v) {
+  if (Math.abs(v) >= 1e6 || (Math.abs(v) < 0.01 && v !== 0)) return v.toExponential(1);
+  const s = +v.toPrecision(6) + '';
+  return s;
+}
+
+// ── draw ───────────────────────────────────────────────────────────────────────
+function draw() {
+  if (!cam.scale) return;
+  const w = cCanvas.width, h = cCanvas.height;
+  cc.clearRect(0, 0, w, h);
+  drawGrid();
+
+  const pts = sortedPts();
+  const ok = uniqueOk(pts);
+
+  // curve
+  if (pts.length >= 2 && ok) {
+    cc.save();
+    cc.beginPath();
+    cc.rect(MARGIN, MARGIN, w - 2*MARGIN, h - 2*MARGIN);
+    cc.clip();
+    cc.beginPath(); let first = true;
+    for (let px = MARGIN; px <= w - MARGIN; px += 1.5) {
+      const [xv] = fromCanvas(px, 0);
+      const yv = lagrange(pts, xv);
+      if (!isFinite(yv)) { first = true; continue; }
+      const [, cy] = toCanvas(0, yv);
+      if (first) { cc.moveTo(px, cy); first = false; } else cc.lineTo(px, cy);
+    }
+    cc.strokeStyle = '#378add'; cc.lineWidth = 2.5; cc.stroke();
+    cc.restore();
+  }
+
+  // query annotation
+  if (queryPoint && pts.length >= 2 && ok) {
+    const [qcx, qcy] = toCanvas(queryPoint.x, queryPoint.y);
+    cc.save();
+    cc.setLineDash([5, 4]);
+    cc.strokeStyle = '#9b59b6'; cc.lineWidth = 1.5;
+    cc.beginPath(); cc.moveTo(qcx, MARGIN); cc.lineTo(qcx, h - MARGIN); cc.stroke();
+    cc.beginPath(); cc.moveTo(MARGIN, qcy); cc.lineTo(w - MARGIN, qcy); cc.stroke();
+    cc.restore();
+
+    const inView = qcx >= MARGIN && qcx <= w - MARGIN && qcy >= MARGIN && qcy <= h - MARGIN;
+    if (inView) {
+      cc.beginPath(); cc.arc(qcx, qcy, 8, 0, Math.PI * 2);
+      cc.fillStyle = '#9b59b6'; cc.fill();
+      cc.strokeStyle = isDark() ? 'rgba(255,255,255,0.5)' : '#fff';
+      cc.lineWidth = 2; cc.stroke();
+    }
+
+    const label = `P(${fmtNum(+queryPoint.x.toFixed(4))}) = ${fmtNum(+queryPoint.y.toFixed(4))}`;
+    cc.font = '500 12px system-ui, sans-serif';
+    const tw = cc.measureText(label).width, pad = 8;
+    const lx = Math.min(Math.max(qcx - tw/2 - pad, MARGIN + 2), w - MARGIN - tw - pad*2 - 2);
+    const ly = Math.max(MARGIN + 4, (inView ? qcy : h/2) - 32);
+    cc.fillStyle = isDark() ? '#3a2a4a' : '#f3eaff';
+    cc.beginPath(); cc.roundRect(lx, ly, tw + pad*2, 22, 5); cc.fill();
+    cc.strokeStyle = '#9b59b6'; cc.lineWidth = 0.5;
+    cc.beginPath(); cc.roundRect(lx, ly, tw + pad*2, 22, 5); cc.stroke();
+    cc.fillStyle = '#9b59b6'; cc.textAlign = 'left';
+    cc.fillText(label, lx + pad, ly + 15);
+  }
+
+  // data dots
+  oc.clearRect(0, 0, w, h);
+  points.forEach(pt => {
+    const [cx, cy] = toCanvas(pt[0], pt[1]);
+    oc.beginPath(); oc.arc(cx, cy, 7, 0, Math.PI * 2);
+    oc.fillStyle = '#d85a30'; oc.fill();
+    oc.strokeStyle = isDark() ? 'rgba(255,255,255,0.5)' : '#fff';
+    oc.lineWidth = 2; oc.stroke();
+  });
+
+  // zoom label
+  const zoomX = cam.scale / defaultScale();
+  document.getElementById('zoom-label').textContent = zoomX < 10 ? zoomX.toFixed(1) + '×' : Math.round(zoomX) + '×';
+
+  // sidebar
+  document.getElementById('warning').style.display = (pts.length > 7 && ok) ? 'block' : 'none';
+  const deg = document.getElementById('degree-badge'), dtext = document.getElementById('degree-text');
+  if (pts.length >= 2 && ok) { deg.style.display = ''; dtext.textContent = `Degree ${pts.length - 1} polynomial`; }
+  else deg.style.display = 'none';
+  updateChipList();
+  const el = document.getElementById('poly-display');
+  if (pts.length < 2 || !ok) { el.textContent = ''; return; }
+  if (pts.length > 5) { el.textContent = `P(x) — degree ${pts.length-1} polynomial through ${pts.length} points`; return; }
+  el.textContent = `P(x) fits: [${pts.map(p=>`(${fmtNum(p[0])}, ${fmtNum(p[1])})`).join(', ')}]`;
+}
+
+function updateChipList() {
+  const el = document.getElementById('pts-list');
+  el.innerHTML = '';
+  points.forEach((pt, i) => {
+    const chip = document.createElement('div');
+    chip.className = 'pt-chip';
+    chip.innerHTML = `(${fmtNum(pt[0])}, ${fmtNum(pt[1])}) <button onclick="removePoint(${i})" title="Remove">×</button>`;
+    el.appendChild(chip);
+  });
+}
+
+// ── zoom helpers ───────────────────────────────────────────────────────────────
+const MIN_SCALE = 0.002, MAX_SCALE = 200;
+
+function zoomAt(cx, cy, factor) {
+  // keep world point under cursor fixed
+  const [wx, wy] = fromCanvas(cx, cy);
+  cam.scale = Math.max(MIN_SCALE, Math.min(MAX_SCALE, cam.scale * factor));
+  // adjust cam center so wx,wy stays under cursor
+  const [nx, ny] = toCanvas(wx, wy);
+  cam.cx += (nx - cx) / cam.scale;
+  cam.cy -= (ny - cy) / cam.scale;
+  draw();
+}
+
+function zoomStep(factor) {
+  const w = cCanvas.width, h = cCanvas.height;
+  zoomAt(w / 2, h / 2, factor);
+}
+
+// ── resize ─────────────────────────────────────────────────────────────────────
+function resize() {
+  const w = wrap.clientWidth, h = wrap.clientHeight;
+  [cCanvas, oCanvas].forEach(c => { c.width = w; c.height = h; });
+  if (!cam.scale) cam.scale = defaultScale();
+  draw();
+}
+
+// ── point management ───────────────────────────────────────────────────────────
+function addPoint(x, y) {
+  x = +x.toFixed(6); y = +y.toFixed(6);
+  if (points.some(p => Math.abs(p[0] - x) < 1e-4)) return false;
+  points.push([x, y]);
+  queryPoint = null; hideResult(); draw();
+  return true;
+}
+function removePoint(i) { points.splice(i, 1); queryPoint = null; hideResult(); draw(); }
+function clearPoints() { points = []; queryPoint = null; hideResult(); draw(); }
+
+function addManual() {
+  const ex = document.getElementById('add-error');
+  ex.style.display = 'none';
+  const xv = parseFloat(document.getElementById('in-x').value);
+  const yv = parseFloat(document.getElementById('in-y').value);
+  if (isNaN(xv) || isNaN(yv)) { ex.textContent = 'Enter valid numbers for both x and y.'; ex.style.display = 'block'; return; }
+  if (!addPoint(xv, yv)) { ex.textContent = `A point with x ≈ ${xv} already exists.`; ex.style.display = 'block'; return; }
+  document.getElementById('in-x').value = '';
+  document.getElementById('in-y').value = '';
+  document.getElementById('in-x').focus();
+}
+
+function loadPreset() {
+  points = [[-80, 10], [-40, 70], [0, -30], [40, 80], [80, 5]];
+  queryPoint = null; hideResult(); resetView();
+}
+
+function evaluateQuery() {
+  const errEl = document.getElementById('result-error');
+  const resBox = document.getElementById('result-box');
+  errEl.style.display = 'none'; resBox.style.display = 'none';
+  const pts = sortedPts();
+  if (pts.length < 2) { errEl.textContent = 'Add at least 2 data points first.'; errEl.style.display = 'block'; return; }
+  if (!uniqueOk(pts)) { errEl.textContent = 'Duplicate x values exist.'; errEl.style.display = 'block'; return; }
+  const xv = parseFloat(document.getElementById('query-x').value);
+  if (isNaN(xv)) { errEl.textContent = 'Enter a numeric x value.'; errEl.style.display = 'block'; return; }
+  const yv = lagrange(pts, xv);
+  if (!isFinite(yv)) { errEl.textContent = 'Could not compute result.'; errEl.style.display = 'block'; return; }
+  queryPoint = { x: xv, y: yv };
+  document.getElementById('res-value').textContent = `P(${xv}) = ${yv.toFixed(6)}`;
+  document.getElementById('res-sub').textContent = `Interpolated from ${pts.length} points · degree ${pts.length-1} polynomial`;
+  resBox.style.display = 'block';
+  draw();
+}
+
+function clearQuery() { queryPoint = null; document.getElementById('query-x').value = ''; hideResult(); draw(); }
+function hideResult() { document.getElementById('result-box').style.display = 'none'; document.getElementById('result-error').style.display = 'none'; }
+
+// ── canvas interaction ─────────────────────────────────────────────────────────
+let dragging = null;   // index of dragged point
+let panning = false;
+let panStart = null;   // {cx, cy, camCx, camCy}
+
+function hitTest(cx, cy) {
+  for (let i = 0; i < points.length; i++) {
+    const [px, py] = toCanvas(points[i][0], points[i][1]);
+    if (Math.hypot(cx - px, cy - py) < 12) return i;
+  }
+  return null;
+}
+
+oCanvas.addEventListener('mousedown', e => {
+  const r = oCanvas.getBoundingClientRect();
+  const cx = e.clientX - r.left, cy = e.clientY - r.top;
+  const hit = hitTest(cx, cy);
+  if (hit !== null) { dragging = hit; oCanvas.style.cursor = 'grabbing'; return; }
+  // start pan
+  panning = true;
+  panStart = { cx, cy, camCx: cam.cx, camCy: cam.cy };
+  oCanvas.style.cursor = 'grab';
+});
+
+oCanvas.addEventListener('mousemove', e => {
+  const r = oCanvas.getBoundingClientRect();
+  const cx = e.clientX - r.left, cy = e.clientY - r.top;
+  if (dragging !== null) {
+    const [wx, wy] = fromCanvas(cx, cy);
+    points[dragging] = [+wx.toFixed(6), +wy.toFixed(6)];
+    queryPoint = null; hideResult(); draw(); return;
+  }
+  if (panning && panStart) {
+    const dx = (cx - panStart.cx) / cam.scale;
+    const dy = (cy - panStart.cy) / cam.scale;
+    cam.cx = panStart.camCx - dx;
+    cam.cy = panStart.camCy + dy;
+    draw(); return;
+  }
+  oCanvas.style.cursor = hitTest(cx, cy) !== null ? 'grab' : 'crosshair';
+});
+
+oCanvas.addEventListener('mouseup', e => {
+  const r = oCanvas.getBoundingClientRect();
+  const cx = e.clientX - r.left, cy = e.clientY - r.top;
+  if (!panning && dragging === null) return;
+  if (panning && panStart && Math.hypot(cx - panStart.cx, cy - panStart.cy) < 4) {
+    // tiny movement = click → add point
+    const [wx, wy] = fromCanvas(cx, cy);
+    const ex = document.getElementById('add-error');
+    if (!addPoint(wx, wy)) { ex.textContent = 'A point with that x already exists nearby.'; ex.style.display = 'block'; setTimeout(() => ex.style.display = 'none', 2500); }
+  }
+  dragging = null; panning = false; panStart = null;
+  oCanvas.style.cursor = 'crosshair';
+});
+
+oCanvas.addEventListener('mouseleave', () => { dragging = null; panning = false; panStart = null; oCanvas.style.cursor = 'crosshair'; });
+
+// scroll to zoom
+oCanvas.addEventListener('wheel', e => {
+  e.preventDefault();
+  const r = oCanvas.getBoundingClientRect();
+  const cx = e.clientX - r.left, cy = e.clientY - r.top;
+  const factor = e.deltaY < 0 ? 1.15 : 1 / 1.15;
+  zoomAt(cx, cy, factor);
+}, { passive: false });
+
+// pinch to zoom
+let lastPinchDist = null;
+oCanvas.addEventListener('touchstart', e => {
+  if (e.touches.length === 2) { lastPinchDist = Math.hypot(e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY); return; }
+  e.preventDefault();
+  const r = oCanvas.getBoundingClientRect(), t = e.touches[0];
+  const cx = t.clientX - r.left, cy = t.clientY - r.top;
+  const hit = hitTest(cx, cy);
+  if (hit !== null) { dragging = hit; return; }
+  panning = true; panStart = { cx, cy, camCx: cam.cx, camCy: cam.cy };
+}, { passive: false });
+
+oCanvas.addEventListener('touchmove', e => {
+  e.preventDefault();
+  if (e.touches.length === 2 && lastPinchDist !== null) {
+    const dist = Math.hypot(e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY);
+    const r = oCanvas.getBoundingClientRect();
+    const midX = ((e.touches[0].clientX + e.touches[1].clientX) / 2) - r.left;
+    const midY = ((e.touches[0].clientY + e.touches[1].clientY) / 2) - r.top;
+    zoomAt(midX, midY, dist / lastPinchDist);
+    lastPinchDist = dist; return;
+  }
+  const r = oCanvas.getBoundingClientRect(), t = e.touches[0];
+  const cx = t.clientX - r.left, cy = t.clientY - r.top;
+  if (dragging !== null) {
+    const [wx, wy] = fromCanvas(cx, cy);
+    points[dragging] = [+wx.toFixed(6), +wy.toFixed(6)];
+    queryPoint = null; hideResult(); draw(); return;
+  }
+  if (panning && panStart) {
+    cam.cx = panStart.camCx - (cx - panStart.cx) / cam.scale;
+    cam.cy = panStart.camCy + (cy - panStart.cy) / cam.scale;
+    draw();
+  }
+}, { passive: false });
+
+oCanvas.addEventListener('touchend', e => {
+  if (e.touches.length < 2) lastPinchDist = null;
+  if (e.touches.length === 0) {
+    if (panning && panStart) {
+      const r = oCanvas.getBoundingClientRect();
+      const t = e.changedTouches[0];
+      const cx = t.clientX - r.left, cy = t.clientY - r.top;
+      if (Math.hypot(cx - panStart.cx, cy - panStart.cy) < 6) {
+        const [wx, wy] = fromCanvas(cx, cy);
+        addPoint(wx, wy);
+      }
+    }
+    dragging = null; panning = false; panStart = null;
+  }
+});
+
+// keyboard shortcuts
+document.getElementById('in-x').addEventListener('keydown', e => { if (e.key === 'Enter') document.getElementById('in-y').focus(); });
+document.getElementById('in-y').addEventListener('keydown', e => { if (e.key === 'Enter') addManual(); });
+document.getElementById('query-x').addEventListener('keydown', e => { if (e.key === 'Enter') evaluateQuery(); });
+
+const ro = new ResizeObserver(resize);
+ro.observe(wrap);
+resize();
+loadPreset();
+</script>
+</body>
+</html>
