@@ -10,7 +10,7 @@
   h1 { font-size: 20px; font-weight: 500; margin-bottom: 4px; }
   .subtitle { font-size: 13px; color: #666; margin-bottom: 16px; }
 
-  #canvas-wrap { position: relative; width: 100%; height: 600px; border: 0.5px solid #ddd; border-radius: 12px; overflow: hidden; background: #fff; }
+  #canvas-wrap { position: relative; width: 100%; height: 440px; border: 0.5px solid #ddd; border-radius: 12px; overflow: hidden; background: #fff; }
   #curve-canvas, #overlay { position: absolute; inset: 0; width: 100%; height: 100%; }
   #overlay { cursor: crosshair; }
 
@@ -55,6 +55,11 @@
   .err-msg { font-size: 13px; color: #e24b4a; margin-top: 6px; display: none; }
   .divider { border: none; border-top: 0.5px solid #e8e8e5; margin: 16px 0; }
 
+  #formula-box { display: none; background: #fff; border: 0.5px solid #ddd; border-radius: 10px; padding: 14px 18px; margin-top: 12px; }
+  #formula-box .formula-label { font-size: 12px; font-weight: 500; color: #888; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 10px; }
+  #formula-standard { font-size: 14px; font-family: monospace; color: #1a1a1a; word-break: break-word; line-height: 1.7; }
+  #formula-lagrange { font-size: 12px; font-family: monospace; color: #666; word-break: break-word; line-height: 1.8; margin-top: 10px; padding-top: 10px; border-top: 0.5px solid #eee; }
+
   @media (prefers-color-scheme: dark) {
     body { background: #1a1a1a; color: #e8e8e8; }
     #canvas-wrap { border-color: #333; background: #1e1e1e; }
@@ -75,6 +80,9 @@
     #result-box { background: #2a2a2a; border-color: #444; }
     #result-box .res-label, #result-box .res-sub { color: #777; }
     .divider { border-color: #2e2e2e; }
+    #formula-box { background: #2a2a2a; border-color: #444; }
+    #formula-standard { color: #e8e8e8; }
+    #formula-lagrange { color: #888; border-top-color: #3a3a3a; }
   }
 </style>
 </head>
@@ -130,6 +138,12 @@
 </div>
 <div id="warning" style="margin-top:8px;">⚠ High-degree polynomial — edge oscillations may appear.</div>
 <div id="poly-display" style="margin-top:8px;"></div>
+
+<div id="formula-box">
+  <div class="formula-label">Polynomial Formula</div>
+  <div id="formula-standard"></div>
+  <div id="formula-lagrange"></div>
+</div>
 
 <hr class="divider">
 
@@ -208,8 +222,113 @@ function lagrange(pts, x) {
   return result;
 }
 
-let points = [];
-let queryPoint = null;
+// ── polynomial expansion ───────────────────────────────────────────────────────
+// Returns coefficients [a0, a1, a2, ...] of the expanded polynomial P(x) = a0 + a1*x + a2*x^2 + ...
+function expandPolynomial(pts) {
+  const n = pts.length;
+  // result[i] = coefficient of x^i
+  const result = new Array(n).fill(0);
+
+  for (let i = 0; i < n; i++) {
+    // compute basis polynomial L_i as coefficients
+    // start with [1], multiply by (x - x_j)/(x_i - x_j) for j != i
+    let basis = [1];
+    for (let j = 0; j < n; j++) {
+      if (j === i) continue;
+      const d = pts[i][0] - pts[j][0];
+      // multiply basis by (x - pts[j][0]) / d
+      const next = new Array(basis.length + 1).fill(0);
+      for (let k = 0; k < basis.length; k++) {
+        next[k + 1] += basis[k] / d;         // x term
+        next[k]     -= basis[k] * pts[j][0] / d; // constant term
+      }
+      basis = next;
+    }
+    // multiply basis by y_i and add to result
+    for (let k = 0; k < basis.length; k++) {
+      result[k] += pts[i][1] * basis[k];
+    }
+  }
+  return result;
+}
+
+function fmtCoeff(v, decimals = 4) {
+  // round to avoid floating point noise
+  const r = +v.toFixed(decimals);
+  if (Math.abs(r) >= 1e6 || (Math.abs(r) < 1e-4 && r !== 0)) return r.toExponential(2);
+  return r.toString();
+}
+
+function buildStandardFormula(coeffs) {
+  // coeffs[i] = coeff of x^i
+  const n = coeffs.length;
+  let terms = [];
+  for (let i = n - 1; i >= 0; i--) {
+    const c = +coeffs[i].toFixed(6);
+    if (Math.abs(c) < 1e-9) continue;
+    const absC = Math.abs(c);
+    const sign = c < 0 ? '−' : '+';
+    let term = '';
+    if (i === 0) {
+      term = fmtCoeff(absC);
+    } else if (i === 1) {
+      term = (absC === 1 ? '' : fmtCoeff(absC)) + 'x';
+    } else {
+      term = (absC === 1 ? '' : fmtCoeff(absC)) + 'x' + toSuperscript(i);
+    }
+    terms.push({ sign, term });
+  }
+  if (terms.length === 0) return 'P(x) = 0';
+  let formula = 'P(x) = ';
+  terms.forEach((t, idx) => {
+    if (idx === 0) {
+      formula += (t.sign === '−' ? '−' : '') + t.term;
+    } else {
+      formula += ' ' + t.sign + ' ' + t.term;
+    }
+  });
+  return formula;
+}
+
+function toSuperscript(n) {
+  const map = { '0':'⁰','1':'¹','2':'²','3':'³','4':'⁴','5':'⁵','6':'⁶','7':'⁷','8':'⁸','9':'⁹' };
+  return ('' + n).split('').map(c => map[c] || c).join('');
+}
+
+function buildLagrangeFormula(pts) {
+  if (pts.length > 6) return ''; // too long to display meaningfully
+  let terms = [];
+  for (let i = 0; i < pts.length; i++) {
+    const yi = fmtCoeff(pts[i][1], 3);
+    let factors = [];
+    for (let j = 0; j < pts.length; j++) {
+      if (j === i) continue;
+      const xj = fmtCoeff(pts[j][0], 3);
+      const denom = fmtCoeff(pts[i][0] - pts[j][0], 3);
+      factors.push(`(x${pts[j][0] < 0 ? '+' + fmtCoeff(-pts[j][0],3) : '−' + xj})/${denom}`);
+    }
+    terms.push(`${yi} · ${factors.join(' · ')}`);
+  }
+  return 'Lagrange form:\nP(x) = ' + terms.join('\n     + ');
+}
+
+function updateFormulaDisplay(pts, ok) {
+  const box = document.getElementById('formula-box');
+  const stdEl = document.getElementById('formula-standard');
+  const lagEl = document.getElementById('formula-lagrange');
+  if (pts.length < 1 || !ok) { box.style.display = 'none'; return; }
+  if (pts.length === 1) {
+    box.style.display = 'block';
+    stdEl.textContent = `P(x) = ${fmtCoeff(pts[0][1])}`;
+    lagEl.textContent = '';
+    return;
+  }
+  const coeffs = expandPolynomial(pts);
+  box.style.display = 'block';
+  stdEl.textContent = buildStandardFormula(coeffs);
+  lagEl.textContent = buildLagrangeFormula(pts);
+  lagEl.style.display = pts.length <= 6 ? 'block' : 'none';
+}
 function sortedPts() { return [...points].sort((a, b) => a[0] - b[0]); }
 function uniqueOk(pts) { return new Set(pts.map(p => p[0].toFixed(6))).size === pts.length; }
 function isDark() { return matchMedia('(prefers-color-scheme: dark)').matches; }
@@ -376,6 +495,7 @@ function draw() {
   if (pts.length >= 2 && ok) { deg.style.display = ''; dtext.textContent = `Degree ${pts.length - 1} polynomial`; }
   else deg.style.display = 'none';
   updateChipList();
+  updateFormulaDisplay(pts, ok);
   const el = document.getElementById('poly-display');
   if (pts.length < 2 || !ok) { el.textContent = ''; return; }
   if (pts.length > 5) { el.textContent = `P(x) — degree ${pts.length-1} polynomial through ${pts.length} points`; return; }
